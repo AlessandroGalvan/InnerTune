@@ -1,6 +1,7 @@
 package com.malopieds.innertune.ui.screens.library
 
 import android.content.Context
+import android.database.sqlite.SQLiteConstraintException
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
@@ -101,6 +102,9 @@ import com.google.zxing.integration.android.IntentResult
 import com.malopieds.innertune.db.MusicDatabase
 import com.malopieds.innertune.ui.screens.library.QRCodeScanner.QRCodeScanner
 import com.malopieds.innertune.ui.screens.library.QRCodeScanner.RequestCameraPermission
+import kotlinx.coroutines.flow.count
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -624,6 +628,7 @@ fun LibraryMixScreen(
                         }
                     }
                 }
+
         }
         val scrollState = rememberScrollState()
 
@@ -782,6 +787,7 @@ fun CreatePlaylistDialog(
                 )
             }
         )
+
     }
 }
 
@@ -790,61 +796,64 @@ fun processPlaylistContent(
     database: MusicDatabase,
     onDismiss: () -> Unit
 ) {
-    CoroutineScope(Dispatchers.IO).launch {
-        if (!splitContent.isNullOrEmpty()) {
-            database.query {
-                insert(
-                    PlaylistEntity(
-                        id = splitContent[1],
-                        name = splitContent[0], // playlist name
-                    ),
-                )
-            }
+    if (splitContent.isNullOrEmpty() || splitContent.size < 2) {
+        Log.e("processPlaylistContent", "Invalid content from QR code")
+        return
+    }
 
-            val playlist = withContext(Dispatchers.IO) {
-                try {
-                    Playlist(
-                        playlist = PlaylistEntity(
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            // Supponendo che searchSongs ritorni un Flow<List<Song>>
+            val existingSongIds: List<String> = database
+                .searchSongs("SELECT * FROM Song") // Ottenere tutte le canzoni
+                .map { songsList ->
+                    songsList.map { song -> song.song.id.trim() } // Estrai solo l'ID di ogni Song
+                }
+                .firstOrNull() ?: emptyList() // Ottieni il primo valore emesso dal Flow, oppure una lista vuota
+            Log.e("DatabaseError", "aaaaaaa" + existingSongIds.joinToString("\n"))
+            if (splitContent.isNotEmpty()) {
+                // Inserisci la playlist
+                database.query {
+                    insert(
+                        PlaylistEntity(
                             id = splitContent[1],
                             name = splitContent[0]
                         ),
-                        songCount = 0,
-                        thumbnails = listOf()
                     )
-                } catch (e: Exception) {
-                    null
                 }
-            }
 
-            if (splitContent.size > 2) {
-                try {
-                    withContext(Dispatchers.IO) {
-                        for (i in 2 until splitContent.size) {
-                            try {
-                                database.query {
-                                    insert(
-                                        PlaylistSongMap(
-                                            songId = splitContent[i].trim(),
-                                            playlistId = splitContent[1],
-                                            position = i - 2
-                                        )
-                                    )
-                                }
-                            } catch (e: Exception) {
-                                Log.e("DatabaseInsertError", "Error inserting record at position $i", e)
-                                // Puoi anche decidere di continuare o interrompere il ciclo in base al tipo di errore
-                            }
+                // Verifica che le canzoni esistano nel database prima di inserirle nella playlist_song_map
+                for (i in 2 until splitContent.size) {
+                    val songId = splitContent[i]
+
+                    // Verifica se il songId esiste nella lista raccolta
+                    if (songId in existingSongIds) {
+                        // Inserisci il record nella playlist_song_map
+                        database.transaction {
+                            insert(
+                                PlaylistSongMap(
+                                    playlistId = splitContent[1],
+                                    songId = songId.trim(),
+                                    position = i - 2
+                                )
+                            )
                         }
+                    } else {
+                        Log.e("DatabaseError", "Song with ID $songId does not exist")
                     }
-                } catch (e: Exception) {
-                    Log.e("DatabaseError", "Error executing database operations", e)
                 }
             }
 
 
-            database.query { update(playlist!!.playlist.copy(lastUpdateTime = LocalDateTime.now())) }
+            Log.d("processPlaylistContent", "Playlist imported successfully")
+        } catch (e: SQLiteConstraintException) {
+            Log.e("processPlaylistContent", "Constraint violation: ${e.message}")
+        } catch (e: Exception) {
+            Log.e("processPlaylistContent", "Error processing playlist content", e)
+        } finally {
+            withContext(Dispatchers.Main) {
+                onDismiss()
+            }
         }
     }
-
-    onDismiss()
 }

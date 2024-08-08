@@ -24,7 +24,12 @@ import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.guava.await
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalGetImage::class)
 @Composable
@@ -41,16 +46,18 @@ fun QRCodeScanner(
         { previewView },
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black) // Assicurati che il PreviewView sia visibile
+            .background(Color.Black)
     )
 
     LaunchedEffect(cameraProviderFuture) {
         try {
-            val cameraProvider = cameraProviderFuture.await()
+            // Recupero del CameraProvider
+            val cameraProvider = cameraProviderFuture.get()
             Log.d("QRCodeScanner", "Camera provider retrieved")
 
+            // Configurazione della preview
             val preview = Preview.Builder()
-                .setTargetResolution(Size(1280, 720)) // Risoluzione adeguata
+                .setTargetResolution(Size(1280, 720))
                 .build()
                 .also { preview ->
                     preview.setSurfaceProvider(previewView.surfaceProvider)
@@ -59,8 +66,10 @@ fun QRCodeScanner(
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
+            // Configurazione dell'analisi delle immagini
             val imageAnalysis = ImageAnalysis.Builder()
-                .setTargetResolution(Size(1280, 720)) // Risoluzione adeguata
+                .setTargetResolution(Size(1280, 720))
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
                 .also { analysis ->
                     analysis.setAnalyzer(ContextCompat.getMainExecutor(context)) { imageProxy ->
@@ -68,35 +77,43 @@ fun QRCodeScanner(
                         if (mediaImage != null) {
                             val rotationDegrees = imageProxy.imageInfo.rotationDegrees
                             val image = InputImage.fromMediaImage(mediaImage, rotationDegrees)
-                            Log.d("QRCodeScanner", "Processing image with rotation: $rotationDegrees")
 
-                            val barcodeScanner: BarcodeScanner = BarcodeScanning.getClient()
-                            barcodeScanner.process(image)
-                                .addOnSuccessListener { barcodes ->
-                                    Log.d("QRCodeScanner", "Barcodes detected: ${barcodes.size}")
-                                    for (barcode in barcodes) {
-                                        Log.d("QRCodeScanner", "Barcode: ${barcode.displayValue}, Type: ${barcode.valueType}")
-                                        barcode.rawValue?.let { qrCode ->
-                                            Log.d("QRCodeScanner", "QR code scanned: $qrCode")
-                                            onQRCodeScanned(qrCode) // Passa il testo del QR code
-                                            imageProxy.close() // Chiudi il proxy dopo aver letto il QR code
-                                            return@addOnSuccessListener
+                            CoroutineScope(Dispatchers.Default).launch {
+                                Log.d("QRCodeScanner", "Processing image with rotation: $rotationDegrees")
+
+                                val barcodeScanner: BarcodeScanner = BarcodeScanning.getClient()
+                                barcodeScanner.process(image)
+                                    .addOnSuccessListener { barcodes ->
+                                        if (barcodes.isNotEmpty()) {
+                                            val barcode = barcodes.first()
+                                            barcode.rawValue?.let { qrCode ->
+                                                onQRCodeScanned(qrCode)
+                                                CoroutineScope(Dispatchers.Main).launch {
+                                                    if (isActive && cameraProvider.isBound(preview)) {
+                                                        cameraProvider.unbindAll()
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
-                                    imageProxy.close() // Chiudi il proxy se nessun codice QR è stato trovato
-                                }
-                                .addOnFailureListener { e ->
-                                    Log.e("QRCodeScanner", "Barcode scanning failed", e)
-                                    imageProxy.close() // Chiudi il proxy in caso di errore
-                                }
+                                    .addOnFailureListener { e ->
+                                        Log.e("QRCodeScanner", "Barcode scanning failed", e)
+                                    }
+                                    .addOnCompleteListener {
+                                        imageProxy.close()
+                                    }
+
+                            }
                         } else {
-                            Log.d("QRCodeScanner", "Media image is null")
                             imageProxy.close()
                         }
                     }
                 }
 
+            // Assicurati di disconnettere qualsiasi risorsa precedentemente utilizzata
             cameraProvider.unbindAll()
+
+            // Collega la fotocamera al ciclo di vita dell'app
             cameraProvider.bindToLifecycle(
                 lifecycleOwner, cameraSelector, preview, imageAnalysis
             )

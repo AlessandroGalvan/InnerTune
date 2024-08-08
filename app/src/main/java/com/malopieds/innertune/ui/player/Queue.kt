@@ -268,7 +268,7 @@ fun Queue(
         }
 
         LaunchedEffect(mutableQueueWindows) {
-            reorderableState.listState.scrollToItem(currentWindowIndex)
+            reorderableState.listState.scrollToItem(currentWindowIndex.coerceAtLeast(0))
         }
 
         LazyColumn(
@@ -534,7 +534,7 @@ fun Queue(
                     coroutineScope
                         .launch {
                             reorderableState.listState.animateScrollToItem(
-                                if (playerConnection.player.shuffleModeEnabled) playerConnection.player.currentMediaItemIndex else 0,
+                                if (playerConnection.player.shuffleModeEnabled) playerConnection.player.currentMediaItemIndex.coerceAtLeast(0) else 0,
                             )
                         }.invokeOnCompletion {
                             playerConnection.player.shuffleModeEnabled = !playerConnection.player.shuffleModeEnabled

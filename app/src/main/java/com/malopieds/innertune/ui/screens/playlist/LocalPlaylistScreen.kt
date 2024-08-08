@@ -1211,7 +1211,7 @@ fun IconButtonWithDialog(songs: List<PlaylistSong>, playlist: Playlist?) {
                     Button(
                         onClick = {
                             showDialog = false
-                            qrCodeBitmap.value = generateQRCode(playlist?.playlist?.name + "\n" + playlist?.playlist?.id + "\n" + songs.joinToString("\n") { it.song.id })
+                            qrCodeBitmap.value = generateQRCode(playlist?.playlist?.name + "\n" + playlist?.playlist?.id + "\n" + songs.joinToString("\n") { it.song.song.id })
                             showQrCodeDialog = true
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -1241,7 +1241,7 @@ fun IconButtonWithDialog(songs: List<PlaylistSong>, playlist: Playlist?) {
                                 try {
                                     // Creazione del file di testo
                                     val fileName = "${playlist?.playlist?.name}.txt"
-                                    val content = playlist?.playlist?.name + "\n" + playlist?.playlist?.id + "\n" + songs.joinToString("\n") { it.song.id }
+                                    val content = playlist?.playlist?.name + "\n" + playlist?.playlist?.id + "\n" + songs.joinToString("\n") { it.song.song.id }
                                     val file = File(context.getExternalFilesDir(null), fileName)
                                     FileOutputStream(file).use {
                                         it.write(content.toByteArray())

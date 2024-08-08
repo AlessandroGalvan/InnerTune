@@ -157,9 +157,9 @@ fun Lyrics(
             deferredCurrentLineIndex = currentLineIndex
             if (lastPreviewTime == 0L) {
                 if (isSeeking) {
-                    lazyListState.scrollToItem(currentLineIndex, with(density) { 36.dp.toPx().toInt() })
+                    lazyListState.scrollToItem(currentLineIndex.coerceAtLeast(0), with(density) { 36.dp.toPx().toInt() })
                 } else {
-                    lazyListState.animateScrollToItem(currentLineIndex, with(density) { 36.dp.toPx().toInt() })
+                    lazyListState.animateScrollToItem(currentLineIndex.coerceAtLeast(0), with(density) { 36.dp.toPx().toInt() })
                 }
             }
         }
