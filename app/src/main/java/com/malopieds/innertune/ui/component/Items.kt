@@ -965,7 +965,7 @@ fun PlaylistListItem(
     modifier: Modifier = Modifier,
     trailingContent: @Composable RowScope.() -> Unit = {},
     autoPlaylist: Boolean = false,
-    context: Context // Aggiungi questo parametro per accedere al contesto
+    context: Context
 ) = ListItem(
     title = playlist.playlist.name,
     subtitle = {

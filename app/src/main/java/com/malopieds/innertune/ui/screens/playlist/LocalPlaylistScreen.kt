@@ -2,13 +2,19 @@ package com.malopieds.innertune.ui.screens.playlist
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.icu.text.Transliterator
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import android.view.inputmethod.InputMethodManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -19,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,6 +77,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -88,6 +97,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEachIndexed
 import androidx.compose.ui.util.fastSumBy
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.exoplayer.offline.Download
@@ -95,6 +107,10 @@ import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.WriterException
+import com.google.zxing.common.BitMatrix
+import com.google.zxing.qrcode.QRCodeWriter
 import com.malopieds.innertube.YouTube
 import com.malopieds.innertube.models.SongItem
 import com.malopieds.innertube.utils.completed
@@ -109,6 +125,7 @@ import com.malopieds.innertune.constants.PlaylistSongSortDescendingKey
 import com.malopieds.innertune.constants.PlaylistSongSortType
 import com.malopieds.innertune.constants.PlaylistSongSortTypeKey
 import com.malopieds.innertune.constants.ThumbnailCornerRadius
+import com.malopieds.innertune.db.entities.Playlist
 import com.malopieds.innertune.db.entities.PlaylistSong
 import com.malopieds.innertune.db.entities.PlaylistSongMap
 import com.malopieds.innertune.extensions.move
@@ -134,6 +151,7 @@ import com.malopieds.innertune.utils.makeTimeString
 import com.malopieds.innertune.utils.rememberEnumPreference
 import com.malopieds.innertune.utils.rememberPreference
 import com.malopieds.innertune.viewmodels.LocalPlaylistViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -296,16 +314,17 @@ fun LocalPlaylistScreen(
     var isImageTouched by remember { mutableStateOf(false) }
 
     Box(
-        modifier = Modifier.fillMaxSize().
-        pointerInput (Unit) {
-            detectTapGestures(
-                onTap = {
-                    if (isImageTouched) {
-                        isImageTouched = false
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        if (isImageTouched) {
+                            isImageTouched = false
+                        }
                     }
-                }
-            )
-        },
+                )
+            },
     ) {
         LazyColumn(
             state = reorderableState.listState,
@@ -431,7 +450,10 @@ fun LocalPlaylistScreen(
                                             modifier = Modifier
                                                 .align(Alignment.Center)
                                                 .size(40.dp)
-                                                .background(MaterialTheme.colorScheme.background, shape = CircleShape)
+                                                .background(
+                                                    MaterialTheme.colorScheme.background,
+                                                    shape = CircleShape
+                                                )
                                                 .padding(8.dp)
                                         )
                                     }
@@ -576,6 +598,7 @@ fun LocalPlaylistScreen(
                                                 contentDescription = null,
                                             )
                                         }
+                                        IconButtonWithDialog(songs, playlist)
                                     }
                                 }
                             }
@@ -843,7 +866,6 @@ fun LocalPlaylistScreen(
                                     true
                                 },
                             )
-
                         val content: @Composable () -> Unit = {
                             SongListItem(
                                 song = song.song,
@@ -1156,4 +1178,165 @@ fun loadImageUri(context: Context, playlistId: String): Uri? {
     val sharedPreferences = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
     val filePath = sharedPreferences.getString("image_file_path_$playlistId", null)
     return filePath?.let { Uri.fromFile(File(it)) }
+}
+
+@Composable
+fun IconButtonWithDialog(songs: List<PlaylistSong>, playlist: Playlist?) {
+    var showDialog by remember { mutableStateOf(false) }
+    var showTextFileDialog by remember { mutableStateOf(false) }
+    var showQrCodeDialog by remember { mutableStateOf(false) }
+    val qrCodeBitmap = remember { mutableStateOf<ImageBitmap?>(null) }
+    val context = LocalContext.current
+
+    if (showDialog) {
+        Dialog(
+            onDismissRequest = { showDialog = false },
+            properties = DialogProperties(),
+            content = {
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                ) {
+                    Text(text = "Choose an option")
+                    Button(
+                        onClick = {
+                            showDialog = false
+                            showTextFileDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Text file")
+                    }
+                    Button(
+                        onClick = {
+                            showDialog = false
+                            qrCodeBitmap.value = generateQRCode(playlist?.playlist?.name + "\n" + playlist?.playlist?.id + "\n" + songs.joinToString("\n") { it.song.id })
+                            showQrCodeDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("QR Code")
+                    }
+                }
+            }
+        )
+    }
+
+    if (showTextFileDialog) {
+        Dialog(
+            onDismissRequest = { showTextFileDialog = false },
+            properties = DialogProperties(),
+            content = {
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                ) {
+                    Text(text = "Condividi il file di testo")
+                    Button(
+                        onClick = {
+                            // Utilizzo di CoroutineScope per eseguire il codice in un thread separato
+                            CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    // Creazione del file di testo
+                                    val fileName = "${playlist?.playlist?.name}.txt"
+                                    val content = playlist?.playlist?.name + "\n" + playlist?.playlist?.id + "\n" + songs.joinToString("\n") { it.song.id }
+                                    val file = File(context.getExternalFilesDir(null), fileName)
+                                    FileOutputStream(file).use {
+                                        it.write(content.toByteArray())
+                                    }
+
+                                    // Verifica che il file esista e sia leggibile
+                                    if (file.exists() && file.canRead()) {
+                                        // Condivisione del file di testo
+                                        val uri = FileProvider.getUriForFile(context, "com.Arturo254.innertune.debug.fileprovider", file)
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(intent, "Share as text file"))
+                                    } else {
+                                        Toast.makeText(context, "File doesn't exists", Toast.LENGTH_SHORT).show()
+                                    }
+
+                                    showTextFileDialog = false
+                                } catch (e: Exception) {
+                                    Log.e("ShareTextFileDialog", "Errore durante la creazione o condivisione del file", e)
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Condividi")
+                    }
+                }
+            }
+        )
+    }
+
+    if (showQrCodeDialog) {
+        Dialog(
+            onDismissRequest = { showQrCodeDialog = false },
+            properties = DialogProperties()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { showQrCodeDialog = false }, // Chiudi il dialogo quando si clicca fuori dall'immagine
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .size(300.dp) // Dimensione fissa del contenitore
+                        .aspectRatio(1f) // Mantieni il rapporto di aspetto quadrato
+                        .clip(RoundedCornerShape(16.dp)) // Angoli smussati
+                        .background(
+                            color = androidx.compose.ui.graphics.Color.Transparent,
+                            shape = RoundedCornerShape(16.dp)
+                        ) // Nessuno sfondo con bordi stondati
+                        .padding(0.dp), // Rimuovi lo spazio interno
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        bitmap = qrCodeBitmap.value!!,
+                        contentDescription = "QR Code",
+                        contentScale = ContentScale.Crop, // Ridimensiona l'immagine per riempire il contenitore
+                        modifier = Modifier.fillMaxSize() // Assicura che l'immagine riempia tutta la Box
+                    ) ?: Text(text = "Errore nella generazione del QR Code")
+                }
+            }
+        }
+    }
+
+    IconButton(
+        onClick = {
+            showDialog = true
+        }
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.share),
+            contentDescription = null
+        )
+    }
+}
+
+fun generateQRCode(text: String, size: Int = 250): ImageBitmap? {
+    return try {
+        val writer = QRCodeWriter()
+        val bitMatrix: BitMatrix = writer.encode(text, BarcodeFormat.QR_CODE, size, size)
+        val width = bitMatrix.width
+        val height = bitMatrix.height
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                bitmap.setPixel(x, y, if (bitMatrix[x, y]) Color.BLACK else Color.WHITE)
+            }
+        }
+        bitmap.asImageBitmap()
+    } catch (e: WriterException) {
+        null
+    }
 }

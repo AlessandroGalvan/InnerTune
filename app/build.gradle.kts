@@ -87,6 +87,22 @@ dependencies {
     implementation(libs.guava)
     implementation(libs.coroutines.guava)
     implementation(libs.concurrent.futures)
+    implementation (libs.core)
+    implementation (libs.core.ktx)
+    implementation (libs.activity.compose.v131)
+    implementation (libs.runtime.livedata)
+    implementation (libs.lifecycle.runtime.ktx)
+    implementation (libs.zxing.android.embedded)
+    // CameraX
+    implementation ("androidx.camera:camera-core:1.1.0")
+    implementation ("androidx.camera:camera-camera2:1.1.0")
+    implementation ("androidx.camera:camera-lifecycle:1.1.0")
+    implementation ("androidx.camera:camera-view:1.0.0-alpha31")
+    implementation ("androidx.camera:camera-extensions:1.0.0-alpha31")
+
+    // ML Kit Barcode Scanning
+    implementation ("com.google.mlkit:barcode-scanning:17.0.2")
+
 
     implementation(libs.activity)
     implementation(libs.navigation)

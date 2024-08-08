@@ -1,6 +1,9 @@
 package com.malopieds.innertune.ui.screens.library
 
+import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -10,6 +13,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -17,15 +21,22 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -34,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.malopieds.innertune.LocalDatabase
 import com.malopieds.innertune.LocalPlayerAwareWindowInsets
 import com.malopieds.innertune.LocalPlayerConnection
 import com.malopieds.innertune.R
@@ -42,6 +54,7 @@ import com.malopieds.innertune.constants.CONTENT_TYPE_HEADER
 import com.malopieds.innertune.constants.CONTENT_TYPE_PLAYLIST
 import com.malopieds.innertune.constants.GridThumbnailHeight
 import com.malopieds.innertune.constants.LibraryViewType
+import com.malopieds.innertune.constants.ListThumbnailSize
 import com.malopieds.innertune.constants.MixSortDescendingKey
 import com.malopieds.innertune.constants.MixSortType
 import com.malopieds.innertune.constants.MixSortTypeKey
@@ -54,10 +67,14 @@ import com.malopieds.innertune.ui.component.AlbumGridItem
 import com.malopieds.innertune.ui.component.AlbumListItem
 import com.malopieds.innertune.ui.component.ArtistGridItem
 import com.malopieds.innertune.ui.component.ArtistListItem
+import com.malopieds.innertune.ui.component.HideOnScrollFAB
+import com.malopieds.innertune.ui.component.ListDialog
+import com.malopieds.innertune.ui.component.ListItem
 import com.malopieds.innertune.ui.component.LocalMenuState
 import com.malopieds.innertune.ui.component.PlaylistGridItem
 import com.malopieds.innertune.ui.component.PlaylistListItem
 import com.malopieds.innertune.ui.component.SortHeader
+import com.malopieds.innertune.ui.component.TextFieldDialog
 import com.malopieds.innertune.ui.menu.AlbumMenu
 import com.malopieds.innertune.ui.menu.ArtistMenu
 import com.malopieds.innertune.ui.menu.PlaylistMenu
@@ -68,6 +85,23 @@ import java.text.Collator
 import java.time.LocalDateTime
 import java.util.Locale
 import java.util.UUID
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import android.util.Log
+import android.widget.Toast
+import androidx.compose.runtime.*
+import com.malopieds.innertune.db.entities.PlaylistSongMap
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.google.zxing.integration.android.IntentIntegrator
+import com.google.zxing.integration.android.IntentResult
+import com.malopieds.innertune.db.MusicDatabase
+import com.malopieds.innertune.ui.screens.library.QRCodeScanner.QRCodeScanner
+import com.malopieds.innertune.ui.screens.library.QRCodeScanner.RequestCameraPermission
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -226,7 +260,8 @@ fun LibraryMixScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     navController.navigate("auto_playlist/liked")
-                                }.animateItemPlacement(),
+                                }
+                                .animateItemPlacement(),
                             context = LocalContext.current
                         )
                     }
@@ -243,7 +278,8 @@ fun LibraryMixScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     navController.navigate("auto_playlist/downloaded")
-                                }.animateItemPlacement(),
+                                }
+                                .animateItemPlacement(),
                             context = LocalContext.current
                         )
                     }
@@ -260,7 +296,8 @@ fun LibraryMixScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     navController.navigate("top_playlist/$topSize")
-                                }.animateItemPlacement(),
+                                }
+                                .animateItemPlacement(),
                             context = LocalContext.current
                         )
                     }
@@ -309,7 +346,8 @@ fun LibraryMixScreen(
                                                     )
                                                 }
                                             },
-                                        ).animateItemPlacement(),
+                                        )
+                                        .animateItemPlacement(),
                                     context = LocalContext.current
                                 )
                             }
@@ -352,7 +390,8 @@ fun LibraryMixScreen(
                                                     )
                                                 }
                                             },
-                                        ).animateItemPlacement(),
+                                        )
+                                        .animateItemPlacement(),
                                 )
                             }
 
@@ -396,7 +435,8 @@ fun LibraryMixScreen(
                                                     )
                                                 }
                                             },
-                                        ).animateItemPlacement(),
+                                        )
+                                        .animateItemPlacement(),
                                 )
                             }
 
@@ -441,7 +481,8 @@ fun LibraryMixScreen(
                                     onClick = {
                                         navController.navigate("auto_playlist/liked")
                                     },
-                                ).animateItemPlacement(),
+                                )
+                                .animateItemPlacement(),
                             context = null
                         )
                     }
@@ -461,7 +502,8 @@ fun LibraryMixScreen(
                                     onClick = {
                                         navController.navigate("auto_playlist/downloaded")
                                     },
-                                ).animateItemPlacement(),
+                                )
+                                .animateItemPlacement(),
                             context = null
                         )
                     }
@@ -481,7 +523,8 @@ fun LibraryMixScreen(
                                     onClick = {
                                         navController.navigate("top_playlist/$topSize")
                                     },
-                                ).animateItemPlacement(),
+                                )
+                                .animateItemPlacement(),
                             context = null
                         )
                     }
@@ -543,7 +586,8 @@ fun LibraryMixScreen(
                                                     )
                                                 }
                                             },
-                                        ).animateItemPlacement(),
+                                        )
+                                        .animateItemPlacement(),
                                 )
                             }
 
@@ -571,7 +615,8 @@ fun LibraryMixScreen(
                                                     )
                                                 }
                                             },
-                                        ).animateItemPlacement(),
+                                        )
+                                        .animateItemPlacement(),
                                 )
                             }
 
@@ -580,5 +625,226 @@ fun LibraryMixScreen(
                     }
                 }
         }
+        val scrollState = rememberScrollState()
+
+        var isDialogVisible by rememberSaveable { mutableStateOf(false) }
+
+        // Funzione per mostrare il dialogo
+        fun showDialog() {
+            isDialogVisible = true
+        }
+
+        // Funzione per nascondere il dialogo
+        fun hideDialog() {
+            isDialogVisible = false
+        }
+
+        // Chiamata al FAB
+        HideOnScrollFAB(
+            visible = true,
+            scrollState = scrollState,
+            icon = R.drawable.add,
+            onClick = {
+                showDialog()
+            }
+        )
+
+        // Chiamata al dialogo
+        CreatePlaylistDialog(
+            isVisible = isDialogVisible,
+            onDismiss = { hideDialog() }
+        )
     }
+}
+@Composable
+fun CreatePlaylistDialog(
+    isVisible: Boolean,
+    onDismiss: () -> Unit,
+) {
+    val database = LocalDatabase.current
+    var showCreatePlaylistDialog by rememberSaveable {
+        mutableStateOf(false)
+    }
+    var showImportFromFileDialog by rememberSaveable {
+        mutableStateOf(false)
+    }
+    var showImportFromQRCodeDialog by rememberSaveable {
+        mutableStateOf(false)
+    }
+    val context = LocalContext.current
+
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val inputStream = context.contentResolver.openInputStream(it)
+            val content = inputStream?.bufferedReader().use { reader -> reader?.readText() }
+            val splitContent = content?.split("\n")
+            processPlaylistContent(splitContent, database, onDismiss)
+        }
+    }
+
+    if (isVisible) {
+        ListDialog(
+            onDismiss = onDismiss,
+        ) {
+            item {
+                ListItem(
+                    title = stringResource(R.string.create_playlist),
+                    thumbnailContent = {
+                        Image(
+                            painter = painterResource(R.drawable.add),
+                            contentDescription = null,
+                            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
+                            modifier = Modifier.size(ListThumbnailSize),
+                        )
+                    },
+                    modifier =
+                    Modifier.clickable {
+                        showCreatePlaylistDialog = true
+                    },
+                )
+            }
+            item {
+                ListItem(
+                    title = "Import playlist from file", //stringResource(R.string.import_playlist_from_file),
+                    thumbnailContent = {
+                        Image(
+                            painter = painterResource(R.drawable.add),
+                            contentDescription = null,
+                            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
+                            modifier = Modifier.size(ListThumbnailSize),
+                        )
+                    },
+                    modifier =
+                    Modifier.clickable {
+                        showImportFromFileDialog = true
+                    },
+                )
+            }
+            item {
+                ListItem(
+                    title = "Import playlist from QR code",//stringResource(R.string.import_playlist_from_qr_code),
+                    thumbnailContent = {
+                        Image(
+                            painter = painterResource(R.drawable.add),
+                            contentDescription = null,
+                            colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
+                            modifier = Modifier.size(ListThumbnailSize),
+                        )
+                    },
+                    modifier =
+                    Modifier.clickable {
+                        showImportFromQRCodeDialog = true
+                    },
+                )
+            }
+        }
+    }
+
+    if (showCreatePlaylistDialog) {
+        TextFieldDialog(
+            icon = { Icon(painter = painterResource(R.drawable.add), contentDescription = null) },
+            title = { Text(text = stringResource(R.string.create_playlist)) },
+            onDismiss = { showCreatePlaylistDialog = false },
+            onDone = { playlistName ->
+                database.query {
+                    insert(
+                        PlaylistEntity(
+                            name = playlistName,
+                        ),
+                    )
+                }
+            },
+        )
+    }
+
+    if (showImportFromFileDialog) {
+        LaunchedEffect(Unit) {
+            launcher.launch("text/plain")
+            showImportFromFileDialog = false
+        }
+    }
+
+    if (showImportFromQRCodeDialog) {
+        RequestCameraPermission(
+            onPermissionGranted = {
+                QRCodeScanner(
+                    onQRCodeScanned = { content ->
+                        val splitContent = content.split("\n")
+                        processPlaylistContent(splitContent, database, onDismiss)
+                        showImportFromQRCodeDialog = false // Nascondi il dialogo solo dopo aver gestito il QR
+                    },
+                    onDismiss = {
+                        showImportFromQRCodeDialog = false
+                        onDismiss()
+                    }
+                )
+            }
+        )
+    }
+}
+
+fun processPlaylistContent(
+    splitContent: List<String>?,
+    database: MusicDatabase,
+    onDismiss: () -> Unit
+) {
+    CoroutineScope(Dispatchers.IO).launch {
+        if (!splitContent.isNullOrEmpty()) {
+            database.query {
+                insert(
+                    PlaylistEntity(
+                        id = splitContent[1],
+                        name = splitContent[0], // playlist name
+                    ),
+                )
+            }
+
+            val playlist = withContext(Dispatchers.IO) {
+                try {
+                    Playlist(
+                        playlist = PlaylistEntity(
+                            id = splitContent[1],
+                            name = splitContent[0]
+                        ),
+                        songCount = 0,
+                        thumbnails = listOf()
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+            if (splitContent.size > 2) {
+                try {
+                    withContext(Dispatchers.IO) {
+                        for (i in 2 until splitContent.size) {
+                            try {
+                                database.query {
+                                    insert(
+                                        PlaylistSongMap(
+                                            songId = splitContent[i].trim(),
+                                            playlistId = splitContent[1],
+                                            position = i - 2
+                                        )
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                Log.e("DatabaseInsertError", "Error inserting record at position $i", e)
+                                // Puoi anche decidere di continuare o interrompere il ciclo in base al tipo di errore
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("DatabaseError", "Error executing database operations", e)
+                }
+            }
+
+
+            database.query { update(playlist!!.playlist.copy(lastUpdateTime = LocalDateTime.now())) }
+        }
+    }
+
+    onDismiss()
 }
